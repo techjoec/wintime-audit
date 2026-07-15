@@ -1,0 +1,843 @@
+# W32Time registry reference database
+# Derived from Microsoft Learn documentation (see docs/SOURCES.md).
+# Facts only; original wording rewritten. MIT licensed.
+#
+# Field reference:
+#   path:    registry key under HKLM (policy twin listed under gpo:)
+#   value:   registry value name
+#   type:    REG_SZ | REG_DWORD | REG_QWORD | REG_MULTI_SZ | REG_EXPAND_SZ | REG_BINARY
+#   class:   config          - admin-configurable setting
+#            internal        - maintained by W32Time / OS, do not modify, exclude from drift comparison
+#            diagnostic      - optional, absent by default (enhanced logging)
+#   gpo:     present only if a Group Policy setting writes this value
+#     policy:        GPO display name under Computer Configuration\Administrative Templates\System\Windows Time Service
+#     policy_path:   registry path of the policy twin under HKLM\SOFTWARE\Policies\Microsoft.
+#                    AUTHORITY: the element key attributes in w32time.admx (NOT the GP mapping
+#                    table in the Tools-and-Settings doc, which is coarser). Note the ADMX gives
+#                    NtpServer/Type explicit key overrides to ...\W32Time\Parameters while all
+#                    W32TIME_POLICY_CONFIG (Global Configuration Settings) elements - including
+#                    the Chain* and RequireSecureTimeSyncRequests values whose OPERATIONAL home
+#                    is TimeProviders\NtpServer - are written under ...\W32Time\Config.
+#     gpo_default:   value the GPO presets when enabled (may differ from OS default!)
+#   defaults: per-role out-of-box values. Roles: dc, member, standalone.
+#             Where MS docs only distinguish "domain members" vs "stand-alone", dc is stated
+#             equal to member by inference (a DC is a domain member); doc-stated DC-specific
+#             defaults in the Windows-Time-Service-Tools-and-Settings.md registry table exist
+#             only for MaxNeg/MaxPosPhaseCorrection, Max/MinPollInterval, and UpdateInterval.
+#             A few entries carry a DC-specific default sourced from ELSEWHERE rather than that
+#             table - TimeProviders\NtpServer\Enabled from the official W32Time team blog
+#             (dcpromo enables the "server piece"); VMICTimeProvider\DllName/InputProvider from
+#             a real w32tm /query /configuration output on Microsoft Q&A plus the Microsoft
+#             Community Hub AskDS blog. The Service root-key values (Start excepted, which is
+#             sourced from Microsoft Support KB2385818) are corroborated only by independent
+#             non-Microsoft sources, since Microsoft does not document per-service installation
+#             values (Type/ErrorControl/ObjectName/ImagePath) for W32Time specifically. Every
+#             such entry's notes: field states its actual provenance rather than implying it
+#             comes from the primary Tools-and-Settings table. See docs/SOURCES.md.
+#             pdce: the EXPECTED CONFIGURED value on the forest-root PDC emulator (convention /
+#             result of documented MS configuration guidance - NOT an out-of-box default; an
+#             unconfigured PDCe showing the plain default is itself worth reporting).
+#             (compare: pdce-exempt tells the auditor not to flag it against the DC baseline.)
+#             null = no default / admin-defined. Omitted role = same as member.
+#   defaults_overrides: machine-readable OS-build-conditional defaults, applied over `defaults`
+#             when the target's CurrentBuildNumber matches. Fields: min_build and/or max_build
+#             (inclusive), optional role (dc|member|standalone; omitted = all), value.
+#   os:      version-specific notes (free-form prose, keyed by version expression)
+#   compare: exact | pdce-exempt | ignore   (ignore = internal/state, skip in drift report)
+#   units:   documented unit, for report readability
+#   notes:   one-line behavioral summary
+
+schema_version: 2
+verified: 2026-07-11
+source_commit: MicrosoftDocs/windowsserverdocs@main (ms.date 2025-09-18); w32time.admx (mxk/windows-secure-group-policy + nsacyber/Windows-Secure-Host-Baseline mirrors, cross-checked with MS Learn ADMX_W32Time policy-CSP)
+
+keys:
+  # ── W32Time\Config ─────────────────────────────────────────────
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: AnnounceFlags
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 10
+    defaults: { dc: 10, member: 10, standalone: 10, pdce: 5 }
+    compare: pdce-exempt
+    notes: >-
+      Reliable-time-server advertisement bitmask (0x1 always timeserv, 0x2 auto
+      timeserv, 0x4 always reliable, 0x8 auto reliable). OS default is 10 for
+      ALL roles including the PDCe; pdce: 5 is the MS-conventional CONFIGURED
+      value (always time server + always reliable, the effect of
+      'w32tm /config /reliable:yes'). A forest-root PDCe still at 10 relies on
+      auto flags that may stop advertising with an external unauthenticated
+      source - report it as a misconfiguration hint, not baseline drift.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: ClockAdjustmentAuditLimit
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 800
+    defaults: { dc: 800, member: 800, standalone: 800 }
+    os: { "2016 1709+ / Win10 1709+": "value introduced; GPO element only in current w32time.admx revisions" }
+    compare: exact
+    units: ppm
+    notes: Smallest local clock adjustment that gets logged to the W32Time event log.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: ClockHoldoverPeriod
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 7800
+    defaults: { dc: 7800, member: 7800, standalone: 7800 }
+    os: { "2016 1709+ / Win10 1709+": "value introduced; GPO element only in current w32time.admx revisions" }
+    compare: exact
+    units: seconds
+    notes: Max seconds the clock may hold accuracy without a sync before source rediscovery.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: EventLogFlags
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 2
+    defaults: { dc: 2, member: 2, standalone: 2 }
+    compare: exact
+    notes: Which events W32Time logs (0x1 time jump, 0x2 source change).
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: FrequencyCorrectRate
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 4
+    defaults: { dc: 4, member: 4, standalone: 4 }
+    compare: exact
+    notes: Clock correction rate; 0 is invalid. Too small = unstable, too large = slow sync.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: HoldPeriod
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 5
+    defaults: { dc: 5, member: 5, standalone: 5 }
+    compare: exact
+    notes: >-
+      Period for which spike detection is disabled so the local clock can
+      synchronize quickly; a spike is a several-seconds-off sample arriving
+      after consistently good samples.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: LargePhaseOffset
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 50000000
+    defaults: { dc: 50000000, member: 50000000, standalone: 50000000 }
+    compare: exact
+    units: 100ns ticks
+    notes: Offset >= this (in 10^-7 s) is treated as a spike.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: LocalClockDispersion
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 10
+    defaults: { dc: 10, member: 10, standalone: 10 }
+    compare: exact
+    units: seconds
+    notes: Assumed dispersion when the only source is the CMOS clock.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: MaxAllowedPhaseOffset
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 300
+    defaults: { dc: 300, member: 300, standalone: 1 }
+    compare: exact
+    units: seconds
+    notes: Max offset corrected by slewing the clock rate; above this the clock is stepped.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: MaxClockRate
+    type: REG_DWORD
+    class: internal
+    defaults: { dc: 155860, member: 155860, standalone: 155860 }
+    compare: ignore
+    notes: Maintained by W32Time; reserved OS data. Do not modify.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: MinClockRate
+    type: REG_DWORD
+    class: internal
+    defaults: { dc: 155860, member: 155860, standalone: 155860 }
+    compare: ignore
+    notes: Maintained by W32Time; reserved OS data. Do not modify.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: MaxNegPhaseCorrection
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 172800
+    defaults: { dc: 172800, member: 0xFFFFFFFF, standalone: 54000 }
+    compare: exact
+    units: seconds
+    notes: >-
+      Largest negative correction applied; larger required change only logs an
+      event. 0xFFFFFFFF = always correct. NOTE the GPO preset (172800) differs
+      from the member OS default (0xFFFFFFFF).
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: MaxPosPhaseCorrection
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 172800
+    defaults: { dc: 172800, member: 0xFFFFFFFF, standalone: 54000 }
+    compare: exact
+    units: seconds
+    notes: Positive-direction twin of MaxNegPhaseCorrection; same GPO-vs-OS default mismatch.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: MaxPollInterval
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 10
+    defaults: { dc: 10, member: 15, standalone: 15 }
+    compare: exact
+    units: log2 seconds
+    notes: Largest allowed system poll interval. GPO preset (10) matches DC default, not member (15).
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: MinPollInterval
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 6
+    defaults: { dc: 6, member: 10, standalone: 10 }
+    compare: exact
+    units: log2 seconds
+    notes: Smallest allowed system poll interval. GPO preset (6) matches DC default, not member (10).
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: PhaseCorrectRate
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 1
+    defaults: { dc: 1, member: 1, standalone: 7 }
+    compare: exact
+    notes: Phase error correction rate; 0 is invalid.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: PollAdjustFactor
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 5
+    defaults: { dc: 5, member: 5, standalone: 5 }
+    compare: exact
+    notes: Governs when the poll interval is raised or lowered based on error size.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: SpikeWatchPeriod
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 900
+    defaults: { dc: 900, member: 900, standalone: 900 }
+    compare: exact
+    units: seconds
+    notes: How long a suspicious offset must persist before it is accepted.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: TimeJumpAuditOffset
+    type: REG_DWORD
+    class: config
+    defaults: { dc: null, member: null, standalone: null }
+    compare: exact
+    units: seconds
+    notes: Audit threshold; clock steps larger than this log an audit event. No GPO twin.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: UpdateInterval
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 100
+    defaults: { dc: 100, member: 30000, standalone: 360000 }
+    compare: exact
+    units: 10ms units
+    notes: >-
+      Interval between phase correction adjustments. GPO preset (100) matches DC
+      default only - enabling Global Configuration Settings on members changes
+      behavior significantly.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: UtilizeSslTimeData
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 1
+    defaults: { dc: 1, member: 1, standalone: 1 }
+    defaults_overrides:
+      - { min_build: 26100, value: 0 }
+    os: { "Server 2025": "default is 0 (secure time seeding off out of box); machine-readable in defaults_overrides" }
+    compare: exact
+    notes: Secure Time Seeding (SSL timestamp clock seeding). 1 = enabled. Introduced after Win10 1511.
+
+  # Enhanced logging (diagnostic, absent by default)
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: FileLogEntries
+    type: REG_SZ
+    class: diagnostic
+    defaults: { dc: null, member: null, standalone: null }
+    compare: exact
+    notes: Enhanced logging - entry flags 0-300 (range syntax allowed, hence string; type inferred - doc states none). Absent by default; presence means debug logging was enabled.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: FileLogName
+    type: REG_SZ
+    class: diagnostic
+    defaults: { dc: null, member: null, standalone: null }
+    compare: exact
+    notes: Enhanced logging - log file path (type inferred - doc states none). Absent by default.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: FileLogSize
+    type: REG_DWORD
+    class: diagnostic
+    defaults: { dc: null, member: null, standalone: null }
+    compare: exact
+    units: bytes
+    notes: Enhanced logging - circular log size (type inferred - doc states none). Absent by default.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Config
+    value: LastKnownGoodTime
+    type: REG_QWORD
+    class: internal
+    defaults: { dc: null, member: null, standalone: null }
+    compare: ignore
+    notes: Runtime state written by the service (last known good time). Not in MS settings doc; observed on all versions.
+
+  # ── W32Time\Parameters ─────────────────────────────────────────
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Parameters
+    value: NtpServer
+    type: REG_SZ
+    class: config
+    gpo:
+      policy: Time Providers\Configure Windows NTP Client
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Parameters
+      gpo_default: "time.windows.com,0x9"
+    defaults: { dc: null, member: null, standalone: "time.windows.com,0x1", pdce: null }
+    compare: pdce-exempt
+    notes: >-
+      Space-delimited peer list with per-peer flags (0x1 SpecialInterval, 0x2
+      UseAsFallbackOnly, 0x4 SymmetricActive, 0x8 Client). No default on domain
+      members. The forest-root PDCe is EXPECTED to have an explicit external
+      peer list here - do not flag as drift. Note: on domain members, a
+      GPO-delivered NtpServer under the policy path is ignored by W32Time.
+      policy_path ...\Parameters is confirmed by an explicit per-element key
+      override in w32time.admx (unlike the other NTP-client policy values).
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Parameters
+    value: Type
+    type: REG_SZ
+    class: config
+    gpo:
+      policy: Time Providers\Configure Windows NTP Client
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Parameters
+      gpo_default: NT5DS
+    defaults: { dc: NT5DS, member: NT5DS, standalone: NTP, pdce: NTP }
+    compare: pdce-exempt
+    notes: >-
+      Sync source selection: NoSync | NTP | NT5DS | AllSync. Domain members use
+      NT5DS (domain hierarchy); the forest-root PDCe is conventionally NTP with
+      an external peer list. GPO preset is NT5DS (the doc's 'NT5DS domain /
+      NTP non-domain' phrasing describes OS defaults, not the policy preset).
+      policy_path ...\Parameters confirmed by explicit ADMX key override.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Parameters
+    value: ServiceDll
+    type: REG_EXPAND_SZ
+    class: internal
+    defaults: { dc: "%windir%\\System32\\W32Time.dll", member: "%windir%\\System32\\W32Time.dll", standalone: "%windir%\\System32\\W32Time.dll" }
+    compare: exact
+    notes: >-
+      Maintained by W32Time. Compared anyway (rather than ignored) because a
+      changed ServiceDll path is a persistence/tampering indicator.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Parameters
+    value: ServiceMain
+    type: REG_SZ
+    class: internal
+    defaults: { dc: SvchostEntry_W32Time, member: SvchostEntry_W32Time, standalone: SvchostEntry_W32Time }
+    compare: exact
+    notes: Maintained by W32Time; compared as a tamper check like ServiceDll.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Parameters
+    value: ServiceDllUnloadOnStop
+    type: REG_DWORD
+    class: config
+    defaults: { dc: 1, member: 1, standalone: 1 }
+    compare: exact
+    notes: Whether the service DLL unloads on service stop. Default 1.
+
+  # ── TimeProviders\NtpClient ────────────────────────────────────
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpClient
+    value: Enabled
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Time Providers\Enable Windows NTP Client
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\TimeProviders\NtpClient
+      gpo_default: 1
+    defaults: { dc: 1, member: 1, standalone: 1 }
+    compare: exact
+    notes: NtpClient provider on/off.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpClient
+    value: AllowNonstandardModeCombinations
+    type: REG_DWORD
+    class: config
+    defaults: { dc: 1, member: 1, standalone: 1 }
+    compare: exact
+    notes: Allow nonstandard NTP mode combinations between peers.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpClient
+    value: CompatibilityFlags
+    type: REG_DWORD
+    class: config
+    defaults: { dc: 0x80000000, member: 0x80000000, standalone: 0x80000000 }
+    compare: exact
+    notes: >-
+      0x1 DispersionInvalid, 0x2 IgnoreFutureRefTimeStamp, 0x80000000
+      AutodetectWin2K, 0x40000000 AutodetectWin2KStage2.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpClient
+    value: CrossSiteSyncFlags
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Time Providers\Configure Windows NTP Client
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\TimeProviders\NtpClient
+      gpo_default: 2
+    defaults: { dc: 2, member: 2, standalone: 2 }
+    compare: exact
+    notes: "Partner selection outside own domain: 0 none, 1 PdcOnly, 2 all. Ignored unless Type=NT5DS."
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpClient
+    value: DllName
+    type: REG_EXPAND_SZ
+    class: internal
+    defaults: { dc: "%windir%\\System32\\W32Time.dll", member: "%windir%\\System32\\W32Time.dll", standalone: "%windir%\\System32\\W32Time.dll" }
+    compare: exact
+    notes: Provider DLL path; compared as a tamper check.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpClient
+    value: EventLogFlags
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Time Providers\Configure Windows NTP Client
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\TimeProviders\NtpClient
+      gpo_default: 0
+    defaults: { dc: 1, member: 1, standalone: 1 }
+    compare: exact
+    notes: >-
+      0x1 reachability changes; 0x2 large sample skew (2003-2008R2 only).
+      NOTE the GPO preset (0) differs from the OS default (1).
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpClient
+    value: InputProvider
+    type: REG_DWORD
+    class: config
+    defaults: { dc: 1, member: 1, standalone: 1 }
+    compare: exact
+    notes: Whether NtpClient acts as an input provider.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpClient
+    value: LargeSampleSkew
+    type: REG_DWORD
+    class: config
+    defaults: { dc: 3, member: 3, standalone: 3 }
+    compare: exact
+    units: seconds
+    notes: Large-sample-skew logging threshold (only logged when EventLogFlags has 0x2).
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpClient
+    value: LastClockRate
+    type: REG_DWORD
+    class: internal
+    defaults: { dc: 156250, member: 156250, standalone: 156250 }
+    compare: ignore
+    notes: Maintained by W32Time; runtime state. Do not modify.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpClient
+    value: ResolvePeerBackoffMaxTimes
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Time Providers\Configure Windows NTP Client
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\TimeProviders\NtpClient
+      gpo_default: 7
+    defaults: { dc: 7, member: 7, standalone: 7 }
+    compare: exact
+    notes: Max doublings of the peer-resolution wait interval; 0 = always minimum.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpClient
+    value: ResolvePeerBackoffMinutes
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Time Providers\Configure Windows NTP Client
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\TimeProviders\NtpClient
+      gpo_default: 15
+    defaults: { dc: 15, member: 15, standalone: 15 }
+    compare: exact
+    units: minutes
+    notes: Initial wait before retrying peer resolution.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpClient
+    value: SpecialPollInterval
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Time Providers\Configure Windows NTP Client
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\TimeProviders\NtpClient
+      gpo_default: 1024
+    defaults: { dc: 3600, member: 3600, standalone: 604800 }
+    compare: exact
+    units: seconds
+    notes: >-
+      Poll interval for manual peers flagged 0x1. Since build 1703 it is clamped
+      by Config MinPollInterval/MaxPollInterval. GPO preset (1024) differs from
+      all OS defaults.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpClient
+    value: SpecialPollTimeRemaining
+    type: REG_MULTI_SZ
+    class: internal
+    defaults: { dc: null, member: null, standalone: null }
+    compare: ignore
+    notes: Maintained by W32Time; seconds until resync after restart. Runtime state.
+
+  # ── TimeProviders\NtpServer ────────────────────────────────────
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpServer
+    value: Enabled
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Time Providers\Enable Windows NTP Server
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\TimeProviders\NtpServer
+      gpo_default: 1
+    defaults: { dc: 1, member: 0, standalone: 0 }
+    compare: exact
+    notes: >-
+      NtpServer provider on/off. The Tools-and-Settings registry table states
+      0 (off) for members/standalone only; dc: 1 is confirmed by a different
+      Microsoft source, the official W32Time team blog ("Configuring a
+      Standalone NtpServer", learn.microsoft.com/archive/blogs/w32time):
+      the 'server piece' is off by default, but "if the machine is acting as
+      a domain controller, then the 'server piece' is already turned on...
+      part of the dcpromo process."
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpServer
+    value: AllowNonstandardModeCombinations
+    type: REG_DWORD
+    class: config
+    defaults: { dc: 1, member: 1, standalone: 1 }
+    compare: exact
+    notes: Allow nonstandard NTP mode combinations between clients and servers.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpServer
+    value: ChainDisable
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 0
+    defaults: { dc: 0, member: 0, standalone: 0 }
+    compare: exact
+    notes: >-
+      Disables the RODC chaining mechanism when 1 (semantics inferred from the
+      value name and default 0; the MS doc's prose is self-contradictory here).
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpServer
+    value: ChainEntryTimeout
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 16
+    defaults: { dc: 16, member: 16, standalone: 16 }
+    compare: exact
+    units: seconds
+    notes: Chaining-table entry expiry.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpServer
+    value: ChainLoggingRate
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 30
+    defaults: { dc: 30, member: 30, standalone: 30 }
+    compare: exact
+    units: minutes
+    notes: Frequency of chaining success/failure event logging.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpServer
+    value: ChainMaxEntries
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 128
+    defaults: { dc: 128, member: 128, standalone: 128 }
+    compare: exact
+    notes: Max chaining-table entries; full table discards incoming requests.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpServer
+    value: ChainMaxHostEntries
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 4
+    defaults: { dc: 4, member: 4, standalone: 4 }
+    compare: exact
+    notes: Max chaining-table entries per host.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpServer
+    value: DllName
+    type: REG_EXPAND_SZ
+    class: internal
+    defaults: { dc: "%windir%\\System32\\W32Time.dll", member: "%windir%\\System32\\W32Time.dll", standalone: "%windir%\\System32\\W32Time.dll" }
+    compare: exact
+    notes: Provider DLL path; compared as a tamper check.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpServer
+    value: EventLogFlags
+    type: REG_DWORD
+    class: config
+    defaults: { dc: 1, member: 1, standalone: 1 }
+    compare: exact
+    notes: 0x1 time changes, 0x2 clock updates, 0x4 service start/stop.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpServer
+    value: InputProvider
+    type: REG_DWORD
+    class: config
+    defaults: { dc: 0, member: 0, standalone: 0 }
+    compare: exact
+    notes: Whether the provider is treated as an input provider. Default 0.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\NtpServer
+    value: RequireSecureTimeSyncRequests
+    type: REG_DWORD
+    class: config
+    gpo:
+      policy: Global Configuration Settings
+      policy_path: SOFTWARE\Policies\Microsoft\W32Time\Config
+      gpo_default: 0
+    defaults: { dc: 0, member: 0, standalone: 0 }
+    os: { "Windows 8+": "value introduced" }
+    compare: exact
+    notes: When 1, the DC refuses time sync requests using older authentication protocols.
+
+  # ── VMICTimeProvider (Hyper-V guests; not in the MS settings doc) ─
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\VMICTimeProvider
+    value: Enabled
+    type: REG_DWORD
+    class: config
+    defaults: { dc: 1, member: 1, standalone: 1 }
+    compare: exact
+    notes: >-
+      Hyper-V TimeSync integration provider. Not covered in the MS
+      tools-and-settings doc; MS accurate-time guidance is to leave enabled
+      (post-2016 it only syncs at boot/resume for domain members). On
+      virtualized DCs some baselines disable it - compare, but expect
+      environment-specific policy.
+
+  # ── W32Time service root key (service-install values; not in the MS
+  #    time-service doc - service-registration facts, observed on all
+  #    supported versions). Start feeds the Service health check; the
+  #    executable/identity values are tamper checks like ServiceDll. ──
+  - path: SYSTEM\CurrentControlSet\Services\W32Time
+    value: Start
+    type: REG_DWORD
+    class: config
+    defaults: { dc: 3, member: 3, standalone: 3 }
+    compare: exact
+    notes: >-
+      Service start mode (2 Automatic, 3 Manual, 4 Disabled). Out-of-box
+      default is 3 (Manual) on EVERY role, including domain controllers - it
+      is paired with a service trigger (see TriggerInfo in internal_subtrees)
+      that starts the service on a DOMAIN JOINED STATUS event, which Windows
+      displays as "Automatic (Trigger Start)" even though the underlying
+      registry value stays Manual. On a workgroup machine the same trigger
+      never fires, so the service stays stopped by design. Source: Microsoft
+      Support KB2385818 ("W32Time doesn't start on a workgroup computer"),
+      which documents the domain-joined trigger-start default and explicitly
+      does not distinguish domain controllers from ordinary members. Start=2
+      is also a legitimate, MS-recommended hardening for high-accuracy
+      scenarios (see accurate-time.md /
+      configuring-systems-for-high-accuracy.md: "set its startup type to
+      Automatic") or the result of KB2385818's `sc triggerinfo w32time
+      delete` workaround - do not treat it as drift on its own.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time
+    value: Type
+    type: REG_DWORD
+    class: internal
+    defaults: { dc: 32, member: 32, standalone: 32 }
+    compare: exact
+    notes: >-
+      Service type 0x20 (shared-process svchost). Tamper check. Corroborated by
+      independent secondary sources (not an MS Learn documentation page); standard
+      value for any svchost-hosted Win32 share-process service.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time
+    value: ErrorControl
+    type: REG_DWORD
+    class: internal
+    defaults: { dc: 1, member: 1, standalone: 1 }
+    compare: exact
+    notes: >-
+      Service error control (1 = normal). Tamper check. Corroborated by
+      independent secondary sources (not an MS Learn documentation page).
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time
+    value: ObjectName
+    type: REG_SZ
+    class: internal
+    defaults: { dc: "NT AUTHORITY\\LocalService", member: "NT AUTHORITY\\LocalService", standalone: "NT AUTHORITY\\LocalService" }
+    compare: exact
+    notes: >-
+      Service account identity. A nonstandard account is a tamper indicator.
+      Corroborated by independent secondary sources (not an MS Learn
+      documentation page).
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time
+    value: ImagePath
+    type: REG_EXPAND_SZ
+    class: internal
+    defaults: { dc: "%SystemRoot%\\system32\\svchost.exe -k LocalService", member: "%SystemRoot%\\system32\\svchost.exe -k LocalService", standalone: "%SystemRoot%\\system32\\svchost.exe -k LocalService" }
+    compare: exact
+    notes: >-
+      Service host command line. Changed path/group is a tamper indicator.
+      Corroborated by independent secondary sources (not an MS Learn
+      documentation page).
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time
+    value: DisplayName
+    type: REG_SZ
+    class: internal
+    defaults: { dc: null, member: null, standalone: null }
+    compare: ignore
+    notes: Localized MUI reference (@%systemroot%\system32\w32time.dll,-200); varies by locale.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time
+    value: Description
+    type: REG_SZ
+    class: internal
+    defaults: { dc: null, member: null, standalone: null }
+    compare: ignore
+    notes: Localized MUI reference; varies by locale.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time
+    value: FailureActions
+    type: REG_BINARY
+    class: internal
+    defaults: { dc: null, member: null, standalone: null }
+    compare: ignore
+    notes: SCM failure-action blob (binary, build-variable). Runtime/install state.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time
+    value: DependOnService
+    type: REG_MULTI_SZ
+    class: internal
+    defaults: { dc: null, member: null, standalone: null }
+    compare: ignore
+    notes: Service dependencies; build-variable. Not compared.
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\VMICTimeProvider
+    value: DllName
+    type: REG_EXPAND_SZ
+    class: internal
+    defaults: { dc: "%SystemRoot%\\System32\\vmictimeprovider.dll", member: "%SystemRoot%\\System32\\vmictimeprovider.dll", standalone: "%SystemRoot%\\System32\\vmictimeprovider.dll" }
+    compare: exact
+    notes: >-
+      Provider DLL path; tamper check. Not in the MS settings doc proper, but
+      confirmed by a real `w32tm /query /configuration` output pasted on a
+      Microsoft Q&A thread (learn.microsoft.com/answers, "VMIC Time Provider
+      not found") and by the Microsoft Community Hub AskDS team blog post
+      "Synchronizing Time on Virtualized AD DS Environments".
+
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TimeProviders\VMICTimeProvider
+    value: InputProvider
+    type: REG_DWORD
+    class: config
+    defaults: { dc: 1, member: 1, standalone: 1 }
+    compare: exact
+    notes: >-
+      Whether the VMIC provider supplies input samples. Not in the MS
+      settings doc proper, but confirmed InputProvider=1 by the same two
+      Microsoft-hosted sources as DllName above (a real query output on
+      Microsoft Q&A, and the AskDS team blog).
+
+# Subtrees that are pure runtime state - the auditor reports their presence
+# but never diffs their contents.
+internal_subtrees:
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\SecureTimeLimits
+    notes: Secure Time Seeding runtime state (SecureTimeConfidence, SecureTimeEstimated, SecureTimeHigh, SecureTimeLow, SecureTimeTickCount; includes nested RunTime subkey). Treated recursively.
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\Security
+    notes: Service security descriptor cache.
+  - path: SYSTEM\CurrentControlSet\Services\W32Time\TriggerInfo
+    notes: Service trigger start definitions (domain-join network triggers).
